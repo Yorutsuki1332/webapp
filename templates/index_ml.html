@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <script src="{{ url_for('static', filename='js/jquery-3.3.1.min.js')}}"></script>
+        <script src="{{ url_for('static', filename='js/socket.io.js') }}"></script>
+    </head>
+    <body>
+        <!-- YOUR CONTENT APPEARED ON A BROWSER FOR USERS -->
+        <h1>My First Machine Learning Experiment</h1>
+        <img id="camera" src="{{ url_for('video_feed') }}" alt="'Live Video Feed">
+        <div id="connection">......</div>
+        <div id="results"> Welcome to Lab#3 Machine Learning...</div>
+        <div id="ml_output">Last attempt: Model output will appear here</div>
+
+        <!-- JAVASCRIPT FOR SOCKET CONNECTION SETUP -->
+        <script type="text/javascript">
+            var socket = io.connect('http://'+location.host); // The location.host returns the URL and Port No. of your current window
+            
+            $(document).ready(function(){
+
+                socket.on('datetime', function(data){
+                    var message = data['message'];
+                    $('#results').html('Current date and time: ' + message);
+                });
+
+                socket.on('ml_label', function(data){
+                    var message = data['message'];
+                    $('#ml_output').text('Last attempt: ' + message);
+
+                });
+            });
+        </script>
+    </body>
+</html>

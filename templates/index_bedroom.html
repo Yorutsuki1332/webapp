@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="5">
+    <title>Sensor Data</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 0;
+        }
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        .table th, .table td {
+            padding: 8px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        .table th {
+            background-color: #f5f5f5;
+        }
+        .table-striped tbody tr:nth-child(odd) {
+            background-color: #f9f9f9;
+        }
+        .chart-container {
+            width: 100%;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 15px;
+            height: 400px;
+        }
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+        img {
+            max-width: 150px;
+            height: auto;
+        }
+        @media (max-width: 768px) {
+            .table {
+                display: block;
+                overflow-x: auto;
+            }
+            .chart-container {
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>Bedroom Sensor Data</h1>
+    
+    <h3>Current Sensor Readings</h3>
+    <table class="table table-striped">
+        <tbody>
+            <tr><th>Temperature (°C)</th><td>{{ temperature|round(2) if temperature != None else "No data available" }}</td></tr>
+            <tr><th>Humidity (%)</th><td>{{ rel_humidity|round(2) if rel_humidity != None else "No data available" }}</td></tr>
+            <tr><th>Light Intensity (lux)</th><td>{{ light_intensity|round(2) if light_intensity != None else "No data available" }}</td></tr>
+            <tr><th>Particle Level</th><td>{{ particle|round(2) if particle != None else "No data available" }}</td></tr>
+        </tbody>
+    </table>
+
+    <div class="chart-container">
+        <canvas id="temperatureChart"></canvas>
+    </div>
+    <div class="chart-container">
+        <canvas id="humidityChart"></canvas>
+    </div>
+    <div class="chart-container">
+        <canvas id="lightChart"></canvas>
+    </div>
+    <div class="chart-container">
+        <canvas id="particleChart"></canvas>
+    </div>
+
+    <script>
+        function createChart(canvasId, label, data, labels, color) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        borderColor: color,
+                        tension: 0.1,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: label
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Parse the JSON strings back into JavaScript arrays
+        const timestamps = JSON.parse('{{ timestamps|safe }}');
+        const temperatures = JSON.parse('{{ temperatures|safe }}');
+        const humidities = JSON.parse('{{ humidities|safe }}');
+        const lightLevels = JSON.parse('{{ light_levels|safe }}');
+        const particles = JSON.parse('{{ particles|safe }}');
+
+        // Create charts with the parsed data
+        createChart('temperatureChart', 'Temperature (°C)', 
+            temperatures, timestamps, 'rgb(255, 99, 132)');
+            
+        createChart('humidityChart', 'Humidity (%)', 
+            humidities, timestamps, 'rgb(54, 162, 235)');
+            
+        createChart('lightChart', 'Light Level (lux)', 
+            lightLevels, timestamps, 'rgb(255, 206, 86)');
+            
+        createChart('particleChart', 'Particle Concentration (μg/m³)', 
+            particles, timestamps, 'rgb(75, 192, 192)');
+    </script>
+
+    <script>
+        // Auto-refresh the page every minute to get the latest sensor data
+        setTimeout(function() { 
+            location.reload();
+        }, 60000);
+    </script>
+</body>
+</html>

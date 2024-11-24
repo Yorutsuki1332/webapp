@@ -1,0 +1,103 @@
+// Replace the chart creation part in your HTML with this:
+<script>
+    let charts = {};
+
+    function createChart(canvasId, label, data, labels, color) {
+        const ctx = document.getElementById(canvasId).getContext('2d');
+        charts[canvasId] = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: label,
+                    data: data,
+                    borderColor: color,
+                    tension: 0.1,
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: label
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                }
+            }
+        });
+    }
+
+    function updateCharts() {
+        $.ajax({
+            url: '/historical_data',
+            method: 'GET',
+            success: function(data) {
+                // Update each chart with new data
+                if (charts.temperatureChart) {
+                    charts.temperatureChart.data.labels = data.timestamps;
+                    charts.temperatureChart.data.datasets[0].data = data.temperatures;
+                    charts.temperatureChart.update();
+                }
+                if (charts.humidityChart) {
+                    charts.humidityChart.data.labels = data.timestamps;
+                    charts.humidityChart.data.datasets[0].data = data.humidities;
+                    charts.humidityChart.update();
+                }
+                if (charts.lightChart) {
+                    charts.lightChart.data.labels = data.timestamps;
+                    charts.lightChart.data.datasets[0].data = data.light_levels;
+                    charts.lightChart.update();
+                }
+                if (charts.particleChart) {
+                    charts.particleChart.data.labels = data.timestamps;
+                    charts.particleChart.data.datasets[0].data = data.particles;
+                    charts.particleChart.update();
+                }
+            },
+            error: function(xhr, status, error) {
+                console.error('Error fetching historical data:', error);
+            }
+        });
+    }
+
+    // Initial chart creation
+    const timestamps = JSON.parse('{{ timestamps|safe }}');
+    const temperatures = JSON.parse('{{ temperatures|safe }}');
+    const humidities = JSON.parse('{{ humidities|safe }}');
+    const lightLevels = JSON.parse('{{ light_levels|safe }}');
+    const particles = JSON.parse('{{ particles|safe }}');
+
+    createChart('temperatureChart', 'Temperature (°C)', 
+        temperatures, timestamps, 'rgb(255, 99, 132)');
+        
+    createChart('humidityChart', 'Humidity (%)', 
+        humidities, timestamps, 'rgb(54, 162, 235)');
+        
+    createChart('lightChart', 'Light Level (lux)', 
+        lightLevels, timestamps, 'rgb(255, 206, 86)');
+        
+    createChart('particleChart', 'Particle Concentration (μg/m³)', 
+        particles, timestamps, 'rgb(75, 192, 192)');
+
+    // Update charts every 60 seconds
+    setInterval(updateCharts, 60000);
+
+    // Continue with the current readings update code
+    function updateCurrentReadings() {
+        // ... (keep your existing updateCurrentReadings function)
+    }
+
+    // Update current readings every 5 seconds
+    setInterval(updateCurrentReadings, 5000);
+</script>
