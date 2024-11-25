@@ -3,85 +3,148 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="5">
-
-    <title>Sensor Data</title>
+    <title>Sensor Data Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 20px;
-            padding: 0;
+            background-color: #f0f0f0;
         }
-        .table {
-            width: 100%;
-            border-collapse: collapse;
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .current-data {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
             margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
-        .table th, .table td {
-            padding: 8px;
-            border: 1px solid #ddd;
-            text-align: left;
+        .data-item {
+            display: inline-block;
+            margin: 10px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            min-width: 200px;
         }
-        .table th {
-            background-color: #f5f5f5;
-        }
-        .table-striped tbody tr:nth-child(odd) {
-            background-color: #f9f9f9;
-        }
-        img {
-            max-width: 150px;
-            height: auto;
+        .charts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
         }
         @media (max-width: 768px) {
-            .table {
-                display: block;
-                overflow-x: auto;
+            .charts {
+                grid-template-columns: 1fr;
             }
+        }
+        .chart {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
     </style>
 </head>
 <body>
-    <h1>Sensor Data</h1>
-    
-    <h3>Current Sensor Readings</h3>
-    <table class="table table-striped">
-        <tbody>
-            <tr><th>Temperature (°C)</th><td>{{ temperature|round(2) if temperature != None else "No data available" }}</td></tr>
-            <tr><th>Humidity (%)</th><td>{{ rel_humidity|round(2) if rel_humidity != None else "No data available" }}</td></tr>
-            <tr><th>Light Intensity (lux)</th><td>{{ light_intensity|round(2) if light_intensity != None else "No data available" }}</td></tr>
-            <tr><th>Particle Level</th><td>{{ particle|round(2) if particle != None else "No data available" }}</td></tr>
-        </tbody>
-    </table>
+    <div class="container">
+        <h1>Sensor Data Dashboard</h1>
+        
+        <div class="current-data">
+            <h2>Current Readings</h2>
+            <div class="data-item">
+                <h3>Temperature</h3>
+                <p id="temperature">--</p>
+            </div>
+            <div class="data-item">
+                <h3>Humidity</h3>
+                <p id="humidity">--</p>
+            </div>
+            <div class="data-item">
+                <h3>Light Level</h3>
+                <p id="light_level">--</p>
+            </div>
+            <div class="data-item">
+                <h3>Particle Level</h3>
+                <p id="particle_level">--</p>
+            </div>
+        </div>
 
-    <h3>Historical Data (Last 100 entries)</h3>
-    {% if historical_data %}
-    <div class="table-responsive">
-        <table class="table table-striped">
-            <thead>
-                <tr>
-                    <th>Timestamp</th>
-                    <th>Temperature (°C)</th>
-                    <th>Humidity (%)</th>
-                    <th>Light Level (lux)</th>
-                    <th>Particle Level</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in historical_data %}
-                <tr>
-                    <td>{{ row[0] }}</td>
-                    <td>{{ row[1]|round(2) if row[1] != None }}</td>
-                    <td>{{ row[2]|round(2) if row[2] != None }}</td>
-                    <td>{{ row[3]|round(2) if row[3] != None }}</td>
-                    <td>{{ row[4]|round(2) if row[4] != None }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="charts">
+            <div class="chart">
+                <div id="temperatureChart"></div>
+            </div>
+            <div class="chart">
+                <div id="humidityChart"></div>
+            </div>
+            <div class="chart">
+                <div id="lightChart"></div>
+            </div>
+            <div class="chart">
+                <div id="particleChart"></div>
+            </div>
+        </div>
     </div>
-    {% else %}
-    <p>No historical data available</p>
-    {% endif %}
 
+    <script>
+        function updateCurrentData() {
+            fetch('/get_current_data')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('temperature').textContent = 
+                        data.temperature ? data.temperature.toFixed(1) + '°C' : '--';
+                    document.getElementById('humidity').textContent = 
+                        data.humidity ? data.humidity.toFixed(1) + '%' : '--';
+                    document.getElementById('light_level').textContent = 
+                        data.light_level ? data.light_level.toFixed(1) + ' lux' : '--';
+                    document.getElementById('particle_level').textContent = 
+                        data.particle_level ? data.particle_level.toFixed(1) + ' μg/m³' : '--';
+                });
+        }
+
+        function updateHistoricalCharts() {
+            fetch('/get_historical_data')
+                .then(response => response.json())
+                .then(data => {
+                    const timestamps = data.map(d => d.timestamp);
+                    const temperatures = data.map(d => d.temperature);
+                    const humidities = data.map(d => d.humidity);
+                    const lightLevels = data.map(d => d.light_level);
+                    const particleLevels = data.map(d => d.particle_level);
+
+                    const createChart = (elementId, title, yData, yAxisTitle) => {
+                        Plotly.newPlot(elementId, [{
+                            x: timestamps,
+                            y: yData,
+                            type: 'scatter',
+                            mode: 'lines+markers'
+                        }], {
+                            title: title,
+                            xaxis: { title: 'Time' },
+                            yaxis: { title: yAxisTitle }
+                        });
+                    };
+
+                    createChart('temperatureChart', 'Temperature History', 
+                              temperatures, 'Temperature (°C)');
+                    createChart('humidityChart', 'Humidity History', 
+                              humidities, 'Humidity (%)');
+                    createChart('lightChart', 'Light Level History', 
+                              lightLevels, 'Light Level (lux)');
+                    createChart('particleChart', 'Particle Level History', 
+                              particleLevels, 'Particle Level (μg/m³)');
+                });
+        }
+
+        // Update data every 5 seconds
+        setInterval(updateCurrentData, 5000);
+        setInterval(updateHistoricalCharts, 5000);
+
+        // Initial update
+        updateCurrentData();
+        updateHistoricalCharts();
+    </script>
 </body>
 </html>

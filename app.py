@@ -9,6 +9,7 @@ from tflite_runtime.interpreter import Interpreter
 import sqlite3
 import spidev
 import pm25
+import threading
 
 app = Flask(__name__)
 socketio = SocketIO(app)
@@ -97,59 +98,63 @@ def close_db(error):
     if db is not None:
         db.close()
 
-db = sqlite3.connect("environment_data.db", check_same_thread=False)
-cursor = db.cursor()
-try:
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS environment_data (
-            timestamp TEXT,
-            temperature REAL,
-            humidity REAL,
-            light_level REAL,
-            particle REAL
-        )
-    ''')
-    db.commit()
-except sqlite3.Error as e:
-    print(f"Error creating table: {e}")
+def init_db():
+    conn = sqlite3.connect('sensor_data.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS sensor_data
+                 (timestamp TEXT, temperature REAL, humidity REAL, 
+                  light_level REAL, particle_level REAL)''')
+    conn.commit()
+    conn.close()
 
-def get_latest_data():
-    try:
-        cursor.execute('SELECT * FROM environment_data ORDER BY timestamp DESC LIMIT 1')
-        return cursor.fetchone()
-    except sqlite3.Error as e:
-        print(f"Error getting latest data: {e}")
-        return None
-
+@app.route('/get_historical_data')
 def get_historical_data():
-    db = get_db()
-    cursor = db.cursor()
-    try:
-        cursor.execute('SELECT * FROM environment_data ORDER BY timestamp DESC LIMIT 100')
-        return cursor.fetchall()    
-    except sqlite3.Error as e:
-        print(f"Error getting historical data: {e}")
-        return []
-
-def collect_data():
-    [temperature, humidity] = gen_sht4x()
-    light_level = gen_7700()
-    particle = pm25.get_pm25_reading()
-    store_data(temperature, humidity, light_level, particle)
-
-def store_data(temperature, humidity, light_level, particle):
-    db = get_db()
-    cursor = db.cursor()
-    try:
+    conn = sqlite3.connect('sensor_data.db')
+    c = conn.cursor()
+    c.execute('''SELECT * FROM sensor_data ORDER BY timestamp DESC LIMIT 100''')
+    data = c.fetchall()
+    conn.close()
+    
+    return jsonify([{
+        'timestamp': row[0],
+        'temperature': row[1],
+        'humidity': row[2],
+        'light_level': row[3],
+        'particle_level': row[4]
+    } for row in data])
+    
+def collect_sensor_data():
+    while True:
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        cursor.execute('''
-            INSERT INTO environment_data 
-            (timestamp, temperature, humidity, light_level, particle)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (timestamp, temperature, humidity, light_level, particle))
-        db.commit()
-    except sqlite3.Error as e:
-        print(f"Error storing data: {e}")
+        [temperature, humidity] = gen_sht4x()
+        light_level =  gen_7700()
+        particle_level = pm25.get_pm25_reading()
+
+        conn = sqlite3.connect('sensor_data.db')
+        c = conn.cursor()
+        c.execute('''INSERT INTO sensor_data VALUES (?, ?, ?, ?, ?)''',
+                 (timestamp, temperature, humidity, light_level, particle_level))
+        conn.commit()
+        conn.close()
+        time.sleep(5)
+
+@app.route('/get_current_data')
+def get_current_data():
+    conn = sqlite3.connect('sensor_data.db')
+    c = conn.cursor()
+    c.execute('''SELECT * FROM sensor_data ORDER BY timestamp DESC LIMIT 1''')
+    data = c.fetchone()
+    conn.close()
+    
+    if data:
+        return jsonify({
+            'timestamp': data[0],
+            'temperature': data[1],
+            'humidity': data[2],
+            'light_level': data[3],
+            'particle_level': data[4]
+        })
+    return jsonify({})
 
 def gen_sht4x():
     try:
@@ -309,49 +314,13 @@ def video_feed():
     return Response(gen_camera(),
             mimetype='multipart/x-mixed-replace; boundary=frame')
 
-@app.route('/')
-def index():
-    return 'Hello world'
-
-@app.route('/lab')
-def lab():
-    return 'Group 07'
-
 @app.route('/sensors')
-def read_i2c():
-    lux = gen_7700()
-    [temp, rh] = gen_sht4x()
-    particle = pm25.get_pm25_reading()
-
-    db = get_db()
-    cursor = db.cursor()
-
-    store_data(
-        temperature=temp,
-        humidity=rh,
-        light_level=lux,
-        particle=particle,
-    )
-    
-    sensor_data = {
-        'temperature': temp,
-        'rel_humidity': rh,
-        'light_intensity': lux,
-        'particle': particle,                  
-    }
-
-    cursor.execute('SELECT * FROM environment_data ORDER BY timestamp DESC LIMIT 100')
-    historical_data = cursor.fetchall()
-    
-    return render_template("index_sensors.html", **sensor_data, historical_data=historical_data)
+def index():
+    return render_template('index_sensors.html')
 
 @app.route('/socket')
 def socket(): 
     return render_template("index_socket.html")
-
-@app.route('/ml')
-def ml():
-    return render_template("index_ml.html")
 
 @app.route('/pose')
 def pose():
@@ -390,4 +359,7 @@ def farm():
     return render_template('index_home.html', latest_data=latest_data, historical_data=historical_data)
 
 if __name__ == '__main__':
+    init_db()
+    sensor_thread = threading.Thread(target=collect_sensor_data, daemon=True)
+    sensor_thread.start()
     socketio.run(app, debug=True, host='0.0.0.0', port=5000, use_reloader = False)

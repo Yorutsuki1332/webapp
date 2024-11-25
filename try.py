@@ -1,82 +1,87 @@
-import time
+from flask import Flask, Response, render_template, jsonify, request
+import cv2
+import numpy as np
+import threading
+import base64
 import json
-import board
-
-from datetime import datetime
-from flask import Flask, jsonify, render_template
-from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
 
+class EnhancedFaceID:
+    # [Previous EnhancedFaceID class code remains exactly the same]
+    # ... (keep all the existing class methods)
 
+# Global variables
+face_id = EnhancedFaceID()
+camera = None
+camera_lock = threading.Lock()
 
+def get_camera():
+    global camera
+    if camera is None:
+        camera = cv2.VideoCapture(0)
+    return camera
 
-
-class SensorDataManager:
-    def __init__(self):
-        self.MAX_HISTORY = 100
-        self.DATA_FILE = 'sensor_history.json'
-        self.historical_data = self.load_historical_data()
-
-    def load_historical_data(self):
-        try:
-            with open(self.DATA_FILE, 'r') as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return []
-
-    def save_historical_data(self):
-        with open(self.DATA_FILE, 'w') as f:
-            json.dump(self.historical_data, f)
-
-    def read_sensor_data(self):
-        max_retries = 3
-        for _ in range(max_retries):
-            try:
-                temperature = 
-                humidity = 
-                light = 
-                
-                return {
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "temperature": round(temperature, 1),
-                    "humidity": round(humidity, 1),
-                    "pressure": round(pressure, 1)
-                }
-            except RuntimeError:
-                # DHT22 sometimes fails to read, wait and retry
-                time.sleep(2)
+def generate_frames():
+    while True:
+        with camera_lock:
+            camera = get_camera()
+            success, frame = camera.read()
+            if not success:
                 continue
-            except Exception as e:
-                print(f"Error reading sensors: {e}")
-                return None
-        return None
-
-    def update_data(self):
-        new_data = self.read_sensor_data()
-        if new_data:
-            self.historical_data.insert(0, new_data)
-            if len(self.historical_data) > self.MAX_HISTORY:
-                self.historical_data = self.historical_data[:self.MAX_HISTORY]
-            self.save_historical_data()
-        return new_data
-
-sensor_manager = SensorDataManager()
+                
+            face_rect, _ = face_id.detect_face(frame)
+            if face_rect is not None:
+                start_x, start_y, end_x, end_y = face_rect
+                cv2.rectangle(frame, (start_x, start_y), (end_x, end_y), (0, 255, 0), 2)
+            
+            ret, buffer = cv2.imencode('.jpg', frame)
+            frame_bytes = buffer.tobytes()
+            
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
 @app.route('/')
-def home():
+def index():
     return render_template('index.html')
 
-@app.route('/latest-data')
-def get_latest_data():
-    latest_data = sensor_manager.update_data()
-    return jsonify(latest_data if latest_data else {"error": "Failed to read sensors"})
+@app.route('/video_feed')
+def video_feed():
+    return Response(generate_frames(),
+                   mimetype='multipart/x-mixed-replace; boundary=frame')
 
-@app.route('/historical-data')
-def get_historical_data():
-    return jsonify(sensor_manager.historical_data)
+@app.route('/register_face', methods=['POST'])
+def register_face():
+    user_id = request.form.get('user_id')
+    if not user_id:
+        return jsonify({"success": False, "message": "No user ID provided"})
+
+    with camera_lock:
+        camera = get_camera()
+        success, frame = camera.read()
+        if not success:
+            return jsonify({"success": False, "message": "Failed to capture frame"})
+        
+        success, message = face_id.register_face(user_id, frame)
+        return jsonify({"success": success, "message": message})
+
+@app.route('/identify_face', methods=['POST'])
+def identify_face():
+    with camera_lock:
+        camera = get_camera()
+        success, frame = camera.read()
+        if not success:
+            return jsonify({"success": False, "message": "Failed to capture frame"})
+        
+        is_match, matched_user = face_id.identify_face(frame)
+        if is_match:
+            return jsonify({"success": True, "user_id": matched_user})
+        return jsonify({"success": False, "message": "No match found"})
+
+@app.route('/get_users', methods=['GET'])
+def get_users():
+    users = face_id.get_registered_users()
+    return jsonify({"users": users})
 
 if __name__ == '__main__':
-    # Run the server on all available network interfaces
     app.run(host='0.0.0.0', port=5000, debug=True)
